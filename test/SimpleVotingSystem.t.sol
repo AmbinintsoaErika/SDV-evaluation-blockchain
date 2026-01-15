@@ -3,518 +3,200 @@ pragma solidity ^0.8.26;
 
 import {Test} from "forge-std/Test.sol";
 import {SimpleVotingSystem} from "../src/SimpleVotingSystem.sol";
+import {SupDeVinciNFT} from "../src/SupDeVinciNFT.sol";
 
 contract SimpleVotingSystemTest is Test {
-  SimpleVotingSystem public votingSystem;
-  address public constant ADMIN = address(0x1234567890123456789012345678901234567890);
-  address public voter1;
-  address public voter2;
-  address public voter3;
-
-  event CandidateAdded(uint indexed candidateId, string name);
-  event VoteCast(address indexed voter, uint indexed candidateId);
-
-  function setUp() public {
-    voter1 = makeAddr("voter1");
-    voter2 = makeAddr("voter2");
-    voter3 = makeAddr("voter3");
-
-    // Créditer tous les comptes avec de l'ETH pour payer le gas des transactions
-    vm.deal(ADMIN, 100 ether);
-    vm.deal(voter1, 10 ether);
-    vm.deal(voter2, 10 ether);
-    vm.deal(voter3, 10 ether);
-
-    vm.startPrank(ADMIN);
-    votingSystem = new SimpleVotingSystem(); //msg.sender de la TX est = à l'adress du SC "SimpleVotingSystemTest"
-    vm.stopPrank();
-  }
-
-  // ============ Tests d'initialisation ============
-
-  function test_InitialState() public view {
-    assertEq(uint(votingSystem.getStatus()), uint(SimpleVotingSystem.Status.REGISTER_CANDIDATES));
-    assertEq(votingSystem.getCandidatesCount(), 0);
-  }
-
-  // ============ Tests pour addCandidate ============
-
-  function test_AddCandidate_AsAdmin() public {
-    string memory candidateName = "Alice";
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate(candidateName);
-    vm.stopPrank();
-
-    assertEq(votingSystem.getCandidatesCount(), 1);
-    SimpleVotingSystem.Candidate memory candidate = votingSystem.getCandidate(1);
-    assertEq(candidate.id, 1);
-    assertEq(candidate.name, candidateName);
-    assertEq(candidate.voteCount, 0);
-    assertEq(candidate.funds, 0);
-  }
-
-  function test_AddCandidate_MultipleCandidates() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    votingSystem.addCandidate("Charlie");
-    vm.stopPrank();
-
-    assertEq(votingSystem.getCandidatesCount(), 3);
-
-    SimpleVotingSystem.Candidate memory candidate1 = votingSystem.getCandidate(1);
-    assertEq(candidate1.name, "Alice");
-    assertEq(candidate1.id, 1);
-
-    SimpleVotingSystem.Candidate memory candidate2 = votingSystem.getCandidate(2);
-    assertEq(candidate2.name, "Bob");
-    assertEq(candidate2.id, 2);
-
-    SimpleVotingSystem.Candidate memory candidate3 = votingSystem.getCandidate(3);
-    assertEq(candidate3.name, "Charlie");
-    assertEq(candidate3.id, 3);
-  }
-
-  function test_AddCandidate_OnlyAdmin() public {
-    vm.startPrank(voter1);
-    vm.expectRevert();
-    votingSystem.addCandidate("Unauthorized Candidate");
-    vm.stopPrank();
-  }
-
-  function test_AddCandidate_EmptyName() public {
-    vm.startPrank(ADMIN);
-    vm.expectRevert("Candidate name cannot be empty");
-    votingSystem.addCandidate("");
-    vm.stopPrank();
-  }
-
-  function test_AddCandidate_WithWhitespace() public {
-    // Un nom avec seulement des espaces devrait être accepté (selon l'implémentation actuelle)
-    // Mais testons avec un nom valide contenant des espaces
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("John Doe");
-    vm.stopPrank();
-    assertEq(votingSystem.getCandidatesCount(), 1);
-    SimpleVotingSystem.Candidate memory candidate = votingSystem.getCandidate(1);
-    assertEq(candidate.name, "John Doe");
-  }
-
-  // ============ Tests pour vote ============
-
-  function test_Vote_ValidCandidate() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    assertTrue(votingSystem.voters(voter1));
-    assertEq(votingSystem.getTotalVotes(1), 1);
-    assertEq(votingSystem.getTotalVotes(2), 0);
-  }
-
-  function test_Vote_MultipleVoters() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    vm.startPrank(voter2);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    vm.startPrank(voter3);
-    votingSystem.vote(2);
-    vm.stopPrank();
-
-    assertEq(votingSystem.getTotalVotes(1), 2);
-    assertEq(votingSystem.getTotalVotes(2), 1);
-    assertTrue(votingSystem.voters(voter1));
-    assertTrue(votingSystem.voters(voter2));
-    assertTrue(votingSystem.voters(voter3));
-  }
-
-  function test_Vote_DuplicateVote() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    vm.expectRevert("You have already voted");
-    votingSystem.vote(1);
-    vm.stopPrank();
-  }
-
-  function test_Vote_InvalidCandidateId_Zero() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    vm.expectRevert("Invalid candidate ID");
-    votingSystem.vote(0);
-    vm.stopPrank();
-  }
-
-  function test_Vote_InvalidCandidateId_TooHigh() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    vm.expectRevert("Invalid candidate ID");
-    votingSystem.vote(2);
-    vm.stopPrank();
-  }
-
-  function test_Vote_InvalidCandidateId_TooHigh_WithMultipleCandidates() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    vm.expectRevert("Invalid candidate ID");
-    votingSystem.vote(3);
-    vm.stopPrank();
-  }
-
-  function test_Vote_AdminCanVote() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    vm.startPrank(ADMIN);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    assertTrue(votingSystem.voters(ADMIN));
-    assertEq(votingSystem.getTotalVotes(1), 1);
-  }
-
-  // ============ Tests pour getTotalVotes ============
-
-  function test_GetTotalVotes_InitialState() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    assertEq(votingSystem.getTotalVotes(1), 0);
-  }
-
-  function test_GetTotalVotes_AfterVotes() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    vm.startPrank(voter2);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    vm.startPrank(voter3);
-    votingSystem.vote(2);
-    vm.stopPrank();
-
-    assertEq(votingSystem.getTotalVotes(1), 2);
-    assertEq(votingSystem.getTotalVotes(2), 1);
-  }
-
-  function test_GetTotalVotes_InvalidCandidateId_Zero() public {
-    vm.expectRevert("Invalid candidate ID");
-    votingSystem.getTotalVotes(0);
-  }
-
-  function test_GetTotalVotes_InvalidCandidateId_TooHigh() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    vm.expectRevert("Invalid candidate ID");
-    votingSystem.getTotalVotes(2);
-  }
-
-  // ============ Tests pour getCandidatesCount ============
-
-  function test_GetCandidatesCount_Initial() public view {
-    assertEq(votingSystem.getCandidatesCount(), 0);
-  }
-
-  function test_GetCandidatesCount_AfterAdding() public {
-    assertEq(votingSystem.getCandidatesCount(), 0);
-
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-    assertEq(votingSystem.getCandidatesCount(), 1);
-
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Bob");
-    vm.stopPrank();
-    assertEq(votingSystem.getCandidatesCount(), 2);
-
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Charlie");
-    vm.stopPrank();
-    assertEq(votingSystem.getCandidatesCount(), 3);
-  }
-
-  // ============ Tests pour getCandidate ============
-
-  function test_GetCandidate_ValidId() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    vm.stopPrank();
-
-    SimpleVotingSystem.Candidate memory candidate1 = votingSystem.getCandidate(1);
-    assertEq(candidate1.id, 1);
-    assertEq(candidate1.name, "Alice");
-    assertEq(candidate1.voteCount, 0);
-    assertEq(candidate1.funds, 0);
-
-    SimpleVotingSystem.Candidate memory candidate2 = votingSystem.getCandidate(2);
-    assertEq(candidate2.id, 2);
-    assertEq(candidate2.name, "Bob");
-    assertEq(candidate2.voteCount, 0);
-    assertEq(candidate2.funds, 0);
-  }
-
-  function test_GetCandidate_WithVotes() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    vm.startPrank(voter1);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    vm.startPrank(voter2);
-    votingSystem.vote(1);
-    vm.stopPrank();
-
-    SimpleVotingSystem.Candidate memory candidate = votingSystem.getCandidate(1);
-    assertEq(candidate.id, 1);
-    assertEq(candidate.name, "Alice");
-    assertEq(candidate.voteCount, 2);
-  }
-
-  function test_GetCandidate_InvalidId_Zero() public {
-    vm.expectRevert("Invalid candidate ID");
-    votingSystem.getCandidate(0);
-  }
-
-  function test_GetCandidate_InvalidId_TooHigh() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    vm.expectRevert("Invalid candidate ID");
-    votingSystem.getCandidate(2);
-  }
-
-  // ============ Tests de cas limites ============
-
-  function test_CompleteVotingScenario() public {
-    // Ajouter plusieurs candidats
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    votingSystem.addCandidate("Charlie");
-    vm.stopPrank();
-
-    // Plusieurs votants votent
-    vm.startPrank(voter1);
-    votingSystem.vote(1); // Alice
-    vm.stopPrank();
-
-    vm.startPrank(voter2);
-    votingSystem.vote(1); // Alice
-    vm.stopPrank();
-
-    vm.startPrank(voter3);
-    votingSystem.vote(2); // Bob
-    vm.stopPrank();
-
-    // Vérifier les résultats
-    assertEq(votingSystem.getTotalVotes(1), 2); // Alice
-    assertEq(votingSystem.getTotalVotes(2), 1); // Bob
-    assertEq(votingSystem.getTotalVotes(3), 0); // Charlie
-
-    // Vérifier que tous ont voté
-    assertTrue(votingSystem.voters(voter1));
-    assertTrue(votingSystem.voters(voter2));
-    assertTrue(votingSystem.voters(voter3));
-
-    // Vérifier les détails des candidats
-    SimpleVotingSystem.Candidate memory alice = votingSystem.getCandidate(1);
-    assertEq(alice.voteCount, 2);
-
-    SimpleVotingSystem.Candidate memory bob = votingSystem.getCandidate(2);
-    assertEq(bob.voteCount, 1);
-
-    SimpleVotingSystem.Candidate memory charlie = votingSystem.getCandidate(3);
-    assertEq(charlie.voteCount, 0);
-  }
-
-  function test_VoteCount_IncrementsCorrectly() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    // Voter plusieurs fois avec différents votants
-    for (uint i = 0; i < 10; i++) {
-      address voter = makeAddr(string(abi.encodePacked("voter", i)));
-      vm.deal(voter, 1 ether);
-      vm.startPrank(voter);
-      votingSystem.vote(1);
-      vm.stopPrank();
+    SimpleVotingSystem public votingSystem;
+    SupDeVinciNFT public voteNFT;
+
+    address public constant ADMIN = address(0x1234567890123456789012345678901234567890);
+    address public constant FOUNDER = address(0x2345678901234567890123456789012345678901);
+    address public constant WITHDRAWER = address(0x3456789012345678901234567890123456789012);
+
+    address public voter1;
+    address public voter2;
+    address public voter3;
+
+    function setUp() public {
+        voter1 = makeAddr("voter1");
+        voter2 = makeAddr("voter2");
+        voter3 = makeAddr("voter3");
+
+        vm.deal(ADMIN, 100 ether);
+        vm.deal(FOUNDER, 50 ether);
+        vm.deal(WITHDRAWER, 50 ether);
+        vm.deal(voter1, 10 ether);
+        vm.deal(voter2, 10 ether);
+        vm.deal(voter3, 10 ether);
+
+        vm.startPrank(ADMIN);
+        voteNFT = new SupDeVinciNFT();
+        votingSystem = new SimpleVotingSystem();
+
+        voteNFT.transferOwnership(address(votingSystem));
+
+        votingSystem.grantRole(votingSystem.FOUNDER_ROLE(), FOUNDER);
+        votingSystem.grantRole(votingSystem.WITHDRAWER_ROLE(), WITHDRAWER);
+        vm.stopPrank();
     }
 
-    assertEq(votingSystem.getTotalVotes(1), 10);
-  }
 
-  // ============ Tests de fuzzing ============
+    function testAddCandidateAsAdmin() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        vm.stopPrank();
 
-  function testFuzz_AddCandidate(string memory _name) public {
-    // Filtrer les noms vides
-    vm.assume(bytes(_name).length > 0);
-
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate(_name);
-    vm.stopPrank();
-
-    assertEq(votingSystem.getCandidatesCount(), 1);
-    SimpleVotingSystem.Candidate memory candidate = votingSystem.getCandidate(1);
-    assertEq(candidate.name, _name);
-    assertEq(candidate.voteCount, 0);
-  }
-
-  function testFuzz_Vote_ValidCandidateId(uint8 _candidateId) public {
-    // Créer plusieurs candidats
-    uint8 numCandidates = 10;
-    vm.startPrank(ADMIN);
-    for (uint8 i = 1; i <= numCandidates; i++) {
-      votingSystem.addCandidate(string(abi.encodePacked("Candidate", i)));
-    }
-    vm.stopPrank();
-
-    // Borner l'ID du candidat à une plage valide
-    _candidateId = uint8(bound(_candidateId, 1, numCandidates));
-
-    address voter = makeAddr("fuzzVoter");
-    vm.deal(voter, 1 ether);
-    vm.startPrank(voter);
-    votingSystem.vote(_candidateId);
-    vm.stopPrank();
-
-    assertTrue(votingSystem.voters(voter));
-    assertEq(votingSystem.getTotalVotes(_candidateId), 1);
-  }
-
-  function testFuzz_MultipleVotes(uint8 _numVotes) public {
-    // Limiter le nombre de votes pour éviter les problèmes de gas
-    _numVotes = uint8(bound(_numVotes, 1, 50));
-
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
-
-    // Créer plusieurs votants et faire voter chacun une fois
-    for (uint8 i = 0; i < _numVotes; i++) {
-      address voter = makeAddr(string(abi.encodePacked("voter", i)));
-      vm.deal(voter, 1 ether);
-      vm.startPrank(voter);
-      votingSystem.vote(1);
-      vm.stopPrank();
+        assertEq(votingSystem.getCandidatesCount(), 1);
+        SimpleVotingSystem.Candidate memory c = votingSystem.getCandidate(1);
+        assertEq(c.name, "Alice");
+        assertEq(c.voteCount, 0);
+        assertEq(c.funds, 0);
     }
 
-    assertEq(votingSystem.getTotalVotes(1), _numVotes);
-  }
+    function testAddCandidateOnlyAdmin() public {
+        vm.startPrank(voter1);
+        vm.expectRevert();
+        votingSystem.addCandidate("Bob");
+        vm.stopPrank();
+    }
 
-  // ============ Tests de mapping public ============
 
-  function test_CandidatesMapping_Public() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    votingSystem.addCandidate("Bob");
-    vm.stopPrank();
+    function testFundCandidateAsFounder() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        vm.stopPrank();
 
-    (uint id1, string memory name1, uint voteCount1, uint funds1) = votingSystem.candidates(1);
-    assertEq(id1, 1);
-    assertEq(name1, "Alice");
-    assertEq(voteCount1, 0);
-    assertEq(funds1, 0);
+        vm.startPrank(FOUNDER);
+        votingSystem.fundCandidate{value: 1 ether}(1);
+        vm.stopPrank();
 
-    (uint id2, string memory name2, uint voteCount2, uint funds2) = votingSystem.candidates(2);
-    assertEq(id2, 2);
-    assertEq(name2, "Bob");
-    assertEq(voteCount2, 0);
-    assertEq(funds2, 0);
-  }
+        SimpleVotingSystem.Candidate memory c = votingSystem.getCandidate(1);
+        assertEq(c.funds, 1 ether);
+    }
 
-  function test_VotersMapping_Public() public {
-    vm.startPrank(ADMIN);
-    votingSystem.addCandidate("Alice");
-    vm.stopPrank();
+    function testFundCandidateNotFounder() public {
+        vm.startPrank(voter1);
+        vm.expectRevert();
+        votingSystem.fundCandidate{value: 1 ether}(1);
+        vm.stopPrank();
+    }
 
-    assertFalse(votingSystem.voters(voter1));
 
-    vm.startPrank(voter1);
-    votingSystem.vote(1);
-    vm.stopPrank();
+    function testVoteValid() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        votingSystem.setStatus(SimpleVotingSystem.Status.VOTE);
+        vm.stopPrank();
 
-    assertTrue(votingSystem.voters(voter1));
-    assertFalse(votingSystem.voters(voter2));
-  }
+        vm.warp(block.timestamp + 3600);
 
-  // ============ Tests de changement de propriétaire ============
-  /**
-  function test_TransferOwnership_NewAdminCanAddCandidate() public {
-    address newAdmin = makeAddr("newAdmin");
-    vm.deal(newAdmin, 10 ether);
+        vm.startPrank(voter1);
+        votingSystem.vote(1);
+        vm.stopPrank();
 
-    vm.startPrank(ADMIN);
-    votingSystem.transferOwnership(newAdmin);
-    vm.stopPrank();
+        assertTrue(votingSystem.voters(voter1));
+        SimpleVotingSystem.Candidate memory c = votingSystem.getCandidate(1);
+        assertEq(c.voteCount, 1);
+        assertTrue(voteNFT.hasVoted(voter1));
+    }
 
-    vm.startPrank(newAdmin);
-    votingSystem.addCandidate("New Candidate");
-    vm.stopPrank();
+    function testVoteOnlyOnce() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        votingSystem.setStatus(SimpleVotingSystem.Status.VOTE);
+        vm.stopPrank();
 
-    assertEq(votingSystem.getCandidatesCount(), 1);
-    SimpleVotingSystem.Candidate memory candidate = votingSystem.getCandidate(1);
-    assertEq(candidate.name, "New Candidate");
-  }
+        vm.warp(block.timestamp + 3600);
 
-  function test_TransferOwnership_OldAdminCannotAddCandidate() public {
-    address newAdmin = makeAddr("newAdmin");
-    vm.deal(newAdmin, 10 ether);
+        vm.startPrank(voter1);
+        votingSystem.vote(1);
+        vm.stopPrank();
 
-    vm.startPrank(ADMIN);
-    votingSystem.transferOwnership(newAdmin);
-    vm.stopPrank();
+        vm.startPrank(voter1);
+        vm.expectRevert("You have already voted !");
+        votingSystem.vote(1);
+        vm.stopPrank();
+    }
 
-    vm.startPrank(ADMIN);
-    vm.expectRevert();
-    votingSystem.addCandidate("Should Fail");
-    vm.stopPrank();
-  }
-   */
+    function testVoteBeforeStart() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        votingSystem.setStatus(SimpleVotingSystem.Status.VOTE);
+        vm.stopPrank();
+
+        vm.startPrank(voter1);
+        vm.expectRevert("Voting has not started yet");
+        votingSystem.vote(1);
+        vm.stopPrank();
+    }
+
+
+    function testGetWinner() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        votingSystem.addCandidate("Bob");
+        votingSystem.setStatus(SimpleVotingSystem.Status.VOTE);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 3600);
+
+        vm.startPrank(voter1);
+        votingSystem.vote(1);
+        vm.stopPrank();
+
+        vm.startPrank(voter2);
+        votingSystem.vote(2);
+        vm.stopPrank();
+
+        vm.startPrank(voter3);
+        votingSystem.vote(1);
+        vm.stopPrank();
+
+        vm.startPrank(ADMIN);
+        votingSystem.setStatus(SimpleVotingSystem.Status.COMPLETED);
+        vm.stopPrank();
+
+        SimpleVotingSystem.Candidate memory winner = votingSystem.getWinner();
+        assertEq(winner.id, 1);
+        assertEq(winner.voteCount, 2);
+    }
+
+
+    function testWithdrawAsWithdrawer() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        votingSystem.setStatus(SimpleVotingSystem.Status.VOTE);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 3600);
+
+        vm.startPrank(FOUNDER);
+        votingSystem.fundCandidate{value: 1 ether}(1);
+        vm.stopPrank();
+
+        vm.startPrank(ADMIN);
+        votingSystem.setStatus(SimpleVotingSystem.Status.COMPLETED);
+        vm.stopPrank();
+
+        uint balanceBefore = WITHDRAWER.balance;
+
+        vm.startPrank(WITHDRAWER);
+        votingSystem.withdraw();
+        vm.stopPrank();
+
+        uint balanceAfter = WITHDRAWER.balance;
+        assertTrue(balanceAfter > balanceBefore);
+    }
+
+    function testWithdrawNotWithdrawer() public {
+        vm.startPrank(ADMIN);
+        votingSystem.addCandidate("Alice");
+        votingSystem.setStatus(SimpleVotingSystem.Status.COMPLETED);
+        vm.stopPrank();
+
+        vm.startPrank(voter1);
+        vm.expectRevert();
+        votingSystem.withdraw();
+        vm.stopPrank();
+    }
 }

@@ -26,7 +26,7 @@ contract SimpleVotingSystem  is AccessControl {
 
     Status public votingStatus;
     uint public triggeredVoteTime;
-    SupDeVinciNFT public sdvNFT;
+    SupDeVinciNFT public sdvNft;
 
     mapping(uint => Candidate) public candidates;
     mapping(address => bool) public voters;
@@ -77,13 +77,13 @@ contract SimpleVotingSystem  is AccessControl {
 
     function vote(uint _candidateId) external onlyAllowedStatus(Status.VOTE) {
         require(block.timestamp >= triggeredVoteTime + 1 hours, "Voting has not started yet");
-        require(!voters[msg.sender] || !sdvNFT.hasVoted(msg.sender), "You have already voted !");
+        require(!voters[msg.sender] || !sdvNft.hasVoted(msg.sender), "You have already voted !");
         require(_candidateId > 0 && _candidateId <= candidateIds.length, "Invalid candidate ID");
 
         voters[msg.sender] = true;
         candidates[_candidateId].voteCount += 1;
 
-        sdvNFT.mint(msg.sender);
+        sdvNft.mint(msg.sender);
     }
 
     // Récupération des fonds
@@ -94,15 +94,17 @@ contract SimpleVotingSystem  is AccessControl {
 
     // Récupération du vainqueur du vote
     function getWinner() external view onlyAllowedStatus(Status.COMPLETED) returns (Candidate memory winner) {
-        uint finalVotes = 0;
+        uint maxNbVotes = 0;
 
         for(uint i=0; i < candidateIds.length; i++) {
             Candidate memory c = candidates[candidateIds[i]];
-            if(c.voteCount > finalVotes) {
-                finalVotes = c.voteCount;
+            if(c.voteCount > maxNbVotes) {
+                maxNbVotes = c.voteCount;
                 winner = c;
             }
         }
+
+        return winner;
     }
 
     // Récupération du nombre de votes
