@@ -2,7 +2,7 @@
 
 ## Description
 
-Ce projet est un système de vote, développé en Solidity.
+Ce projet est un système de vote, développé avec Solidity.
 
 
 ## Spécificités 
