@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.26;
+pragma solidity ^0.8.26;
 
-import {Test, console} from "forge-std/Test.sol";
-import {SimpleVotingSystem} from "../src/SimplevotingSystem.sol";
+import {Test} from "forge-std/Test.sol";
+import {SimpleVotingSystem} from "../src/SimpleVotingSystem.sol";
 
 contract SimpleVotingSystemTest is Test {
   SimpleVotingSystem public votingSystem;
-  address public constant OWNER = address(0x1234567890123456789012345678901234567890);
+  address public constant ADMIN = address(0x1234567890123456789012345678901234567890);
   address public voter1;
   address public voter2;
   address public voter3;
@@ -20,12 +20,12 @@ contract SimpleVotingSystemTest is Test {
     voter3 = makeAddr("voter3");
 
     // Créditer tous les comptes avec de l'ETH pour payer le gas des transactions
-    vm.deal(OWNER, 100 ether);
+    vm.deal(ADMIN, 100 ether);
     vm.deal(voter1, 10 ether);
     vm.deal(voter2, 10 ether);
     vm.deal(voter3, 10 ether);
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem = new SimpleVotingSystem(); //msg.sender de la TX est = à l'adress du SC "SimpleVotingSystemTest"
     vm.stopPrank();
   }
@@ -33,15 +33,15 @@ contract SimpleVotingSystemTest is Test {
   // ============ Tests d'initialisation ============
 
   function test_InitialState() public view {
-    assertEq(votingSystem.owner(), OWNER);
+    assertEq(uint(votingSystem.getStatus()), uint(SimpleVotingSystem.Status.REGISTER_CANDIDATES));
     assertEq(votingSystem.getCandidatesCount(), 0);
   }
 
   // ============ Tests pour addCandidate ============
 
-  function test_AddCandidate_AsOwner() public {
+  function test_AddCandidate_AsAdmin() public {
     string memory candidateName = "Alice";
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate(candidateName);
     vm.stopPrank();
 
@@ -50,10 +50,11 @@ contract SimpleVotingSystemTest is Test {
     assertEq(candidate.id, 1);
     assertEq(candidate.name, candidateName);
     assertEq(candidate.voteCount, 0);
+    assertEq(candidate.funds, 0);
   }
 
   function test_AddCandidate_MultipleCandidates() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     votingSystem.addCandidate("Charlie");
@@ -74,7 +75,7 @@ contract SimpleVotingSystemTest is Test {
     assertEq(candidate3.id, 3);
   }
 
-  function test_AddCandidate_OnlyOwner() public {
+  function test_AddCandidate_OnlyAdmin() public {
     vm.startPrank(voter1);
     vm.expectRevert();
     votingSystem.addCandidate("Unauthorized Candidate");
@@ -82,7 +83,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_AddCandidate_EmptyName() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     vm.expectRevert("Candidate name cannot be empty");
     votingSystem.addCandidate("");
     vm.stopPrank();
@@ -91,7 +92,7 @@ contract SimpleVotingSystemTest is Test {
   function test_AddCandidate_WithWhitespace() public {
     // Un nom avec seulement des espaces devrait être accepté (selon l'implémentation actuelle)
     // Mais testons avec un nom valide contenant des espaces
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("John Doe");
     vm.stopPrank();
     assertEq(votingSystem.getCandidatesCount(), 1);
@@ -102,7 +103,7 @@ contract SimpleVotingSystemTest is Test {
   // ============ Tests pour vote ============
 
   function test_Vote_ValidCandidate() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     vm.stopPrank();
@@ -117,7 +118,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_Vote_MultipleVoters() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     vm.stopPrank();
@@ -142,7 +143,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_Vote_DuplicateVote() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -157,7 +158,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_Vote_InvalidCandidateId_Zero() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -168,7 +169,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_Vote_InvalidCandidateId_TooHigh() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -179,7 +180,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_Vote_InvalidCandidateId_TooHigh_WithMultipleCandidates() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     vm.stopPrank();
@@ -190,23 +191,23 @@ contract SimpleVotingSystemTest is Test {
     vm.stopPrank();
   }
 
-  function test_Vote_OwnerCanVote() public {
-    vm.startPrank(OWNER);
+  function test_Vote_AdminCanVote() public {
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.vote(1);
     vm.stopPrank();
 
-    assertTrue(votingSystem.voters(OWNER));
+    assertTrue(votingSystem.voters(ADMIN));
     assertEq(votingSystem.getTotalVotes(1), 1);
   }
 
   // ============ Tests pour getTotalVotes ============
 
   function test_GetTotalVotes_InitialState() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -214,7 +215,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_GetTotalVotes_AfterVotes() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     vm.stopPrank();
@@ -241,7 +242,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_GetTotalVotes_InvalidCandidateId_TooHigh() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -258,17 +259,17 @@ contract SimpleVotingSystemTest is Test {
   function test_GetCandidatesCount_AfterAdding() public {
     assertEq(votingSystem.getCandidatesCount(), 0);
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
     assertEq(votingSystem.getCandidatesCount(), 1);
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Bob");
     vm.stopPrank();
     assertEq(votingSystem.getCandidatesCount(), 2);
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Charlie");
     vm.stopPrank();
     assertEq(votingSystem.getCandidatesCount(), 3);
@@ -277,7 +278,7 @@ contract SimpleVotingSystemTest is Test {
   // ============ Tests pour getCandidate ============
 
   function test_GetCandidate_ValidId() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     vm.stopPrank();
@@ -286,15 +287,17 @@ contract SimpleVotingSystemTest is Test {
     assertEq(candidate1.id, 1);
     assertEq(candidate1.name, "Alice");
     assertEq(candidate1.voteCount, 0);
+    assertEq(candidate1.funds, 0);
 
     SimpleVotingSystem.Candidate memory candidate2 = votingSystem.getCandidate(2);
     assertEq(candidate2.id, 2);
     assertEq(candidate2.name, "Bob");
     assertEq(candidate2.voteCount, 0);
+    assertEq(candidate2.funds, 0);
   }
 
   function test_GetCandidate_WithVotes() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -318,7 +321,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_GetCandidate_InvalidId_TooHigh() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -330,7 +333,7 @@ contract SimpleVotingSystemTest is Test {
 
   function test_CompleteVotingScenario() public {
     // Ajouter plusieurs candidats
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     votingSystem.addCandidate("Charlie");
@@ -371,7 +374,7 @@ contract SimpleVotingSystemTest is Test {
   }
 
   function test_VoteCount_IncrementsCorrectly() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -393,7 +396,7 @@ contract SimpleVotingSystemTest is Test {
     // Filtrer les noms vides
     vm.assume(bytes(_name).length > 0);
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate(_name);
     vm.stopPrank();
 
@@ -406,7 +409,7 @@ contract SimpleVotingSystemTest is Test {
   function testFuzz_Vote_ValidCandidateId(uint8 _candidateId) public {
     // Créer plusieurs candidats
     uint8 numCandidates = 10;
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     for (uint8 i = 1; i <= numCandidates; i++) {
       votingSystem.addCandidate(string(abi.encodePacked("Candidate", i)));
     }
@@ -429,7 +432,7 @@ contract SimpleVotingSystemTest is Test {
     // Limiter le nombre de votes pour éviter les problèmes de gas
     _numVotes = uint8(bound(_numVotes, 1, 50));
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -448,24 +451,26 @@ contract SimpleVotingSystemTest is Test {
   // ============ Tests de mapping public ============
 
   function test_CandidatesMapping_Public() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     votingSystem.addCandidate("Bob");
     vm.stopPrank();
 
-    (uint id1, string memory name1, uint voteCount1) = votingSystem.candidates(1);
+    (uint id1, string memory name1, uint voteCount1, uint funds1) = votingSystem.candidates(1);
     assertEq(id1, 1);
     assertEq(name1, "Alice");
     assertEq(voteCount1, 0);
+    assertEq(funds1, 0);
 
-    (uint id2, string memory name2, uint voteCount2) = votingSystem.candidates(2);
+    (uint id2, string memory name2, uint voteCount2, uint funds2) = votingSystem.candidates(2);
     assertEq(id2, 2);
     assertEq(name2, "Bob");
     assertEq(voteCount2, 0);
+    assertEq(funds2, 0);
   }
 
   function test_VotersMapping_Public() public {
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     votingSystem.addCandidate("Alice");
     vm.stopPrank();
 
@@ -480,16 +485,16 @@ contract SimpleVotingSystemTest is Test {
   }
 
   // ============ Tests de changement de propriétaire ============
+  /**
+  function test_TransferOwnership_NewAdminCanAddCandidate() public {
+    address newAdmin = makeAddr("newAdmin");
+    vm.deal(newAdmin, 10 ether);
 
-  function test_TransferOwnership_NewOwnerCanAddCandidate() public {
-    address newOwner = makeAddr("newOwner");
-    vm.deal(newOwner, 10 ether);
-
-    vm.startPrank(OWNER);
-    votingSystem.transferOwnership(newOwner);
+    vm.startPrank(ADMIN);
+    votingSystem.transferOwnership(newAdmin);
     vm.stopPrank();
 
-    vm.startPrank(newOwner);
+    vm.startPrank(newAdmin);
     votingSystem.addCandidate("New Candidate");
     vm.stopPrank();
 
@@ -498,17 +503,18 @@ contract SimpleVotingSystemTest is Test {
     assertEq(candidate.name, "New Candidate");
   }
 
-  function test_TransferOwnership_OldOwnerCannotAddCandidate() public {
-    address newOwner = makeAddr("newOwner");
-    vm.deal(newOwner, 10 ether);
+  function test_TransferOwnership_OldAdminCannotAddCandidate() public {
+    address newAdmin = makeAddr("newAdmin");
+    vm.deal(newAdmin, 10 ether);
 
-    vm.startPrank(OWNER);
-    votingSystem.transferOwnership(newOwner);
+    vm.startPrank(ADMIN);
+    votingSystem.transferOwnership(newAdmin);
     vm.stopPrank();
 
-    vm.startPrank(OWNER);
+    vm.startPrank(ADMIN);
     vm.expectRevert();
     votingSystem.addCandidate("Should Fail");
     vm.stopPrank();
   }
+   */
 }
